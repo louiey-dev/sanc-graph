@@ -2,6 +2,14 @@
 
 plotting tool which parses incoming data stream via specific data format and display line chart
 
+- Parses first packet to understand what kind of parameters are comming and display its incoming parameters at Metrix Selector panel
+- Choose parameters which want to plot
+- Start/Stop CSV saves incoming parameters to CSV file
+- Control plot width via Poiints bar
+- Move parameters Y-axis to left or right
+
+![img](sanc_graph.png)
+
 ## Data stream format
 
 SSE (Server-Sent Events) HTTP stream

@@ -13,30 +13,31 @@ class ControlPanel extends StatefulWidget {
 class _ControlPanelState extends State<ControlPanel> {
   late TextEditingController _ipController;
   late TextEditingController _portController;
+  late TelemetryProvider _provider;
   bool _wasSavingCsv = false;
 
   @override
   void initState() {
     super.initState();
-    final provider = Provider.of<TelemetryProvider>(context, listen: false);
-    _ipController = TextEditingController(text: provider.ip);
-    _portController = TextEditingController(text: provider.port.toString());
-    _wasSavingCsv = provider.isSavingCsv;
-    provider.addListener(_onProviderChange);
+    _provider = Provider.of<TelemetryProvider>(context, listen: false);
+    _ipController = TextEditingController(text: _provider.ip);
+    _portController = TextEditingController(text: _provider.port.toString());
+    _wasSavingCsv = _provider.isSavingCsv;
+    _provider.addListener(_onProviderChange);
   }
 
   @override
   void dispose() {
-    final provider = Provider.of<TelemetryProvider>(context, listen: false);
-    provider.removeListener(_onProviderChange);
+    // Use the cached reference: looking up an ancestor via context in dispose()
+    // is unsafe once the element has been deactivated.
+    _provider.removeListener(_onProviderChange);
     _ipController.dispose();
     _portController.dispose();
     super.dispose();
   }
 
   void _onProviderChange() {
-    final provider = Provider.of<TelemetryProvider>(context, listen: false);
-    if (_wasSavingCsv && !provider.isSavingCsv) {
+    if (_wasSavingCsv && !_provider.isSavingCsv) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -46,7 +47,7 @@ class _ControlPanelState extends State<ControlPanel> {
         );
       }
     }
-    _wasSavingCsv = provider.isSavingCsv;
+    _wasSavingCsv = _provider.isSavingCsv;
   }
 
   void _handleConnectToggle(TelemetryProvider provider) {

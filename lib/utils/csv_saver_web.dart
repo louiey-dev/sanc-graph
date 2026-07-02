@@ -43,32 +43,6 @@ class WebCsvWriter implements CsvWriter {
   }
 }
 
-/// Web implementation of CSV saving using browser downloads.
-Future<bool> saveCsvFile({
-  required String csvContent,
-  required String fileName,
-  required BuildContext context,
-}) async {
-  try {
-    final jsParts = [csvContent.toJS].toJS;
-    final blob = web.Blob(jsParts, web.BlobPropertyBag(type: 'text/csv;charset=utf-8;'));
-
-    final url = web.URL.createObjectURL(blob);
-    final anchor = web.document.createElement('a') as web.HTMLAnchorElement
-      ..href = url
-      ..download = fileName;
-
-    web.document.body?.appendChild(anchor);
-    anchor.click();
-    web.document.body?.removeChild(anchor);
-    web.URL.revokeObjectURL(url);
-    return true;
-  } catch (e) {
-    debugPrint('Error saving CSV on web: $e');
-    return false;
-  }
-}
-
 /// Web implementation of continuous CSV writer (buffers and downloads).
 Future<CsvWriter?> createCsvWriter({
   required String fileName,

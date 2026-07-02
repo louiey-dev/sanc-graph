@@ -27,32 +27,6 @@ class IoCsvWriter implements CsvWriter {
   }
 }
 
-/// Native implementation of CSV saving using FilePicker and dart:io.
-Future<bool> saveCsvFile({
-  required String csvContent,
-  required String fileName,
-  required BuildContext context,
-}) async {
-  try {
-    final String? outputFile = await FilePicker.saveFile(
-      dialogTitle: 'Save Telemetry CSV',
-      fileName: fileName,
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-    );
-
-    if (outputFile != null) {
-      final file = io.File(outputFile);
-      await file.writeAsString(csvContent);
-      return true;
-    }
-    return false; // User cancelled
-  } catch (e) {
-    debugPrint('Error saving CSV on native: $e');
-    return false;
-  }
-}
-
 /// Native implementation of continuous CSV writer.
 Future<CsvWriter?> createCsvWriter({
   required String fileName,

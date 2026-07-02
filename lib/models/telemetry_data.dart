@@ -53,15 +53,6 @@ class TelemetryData {
       return null;
     }
   }
-
-  /// Convert to a map for CSV export
-  Map<String, dynamic> toMap() {
-    return {
-      'timestamp': timestamp,
-      'seq': seq,
-      ...metrics,
-    };
-  }
 }
 
 /// Metadata about a telemetry metric

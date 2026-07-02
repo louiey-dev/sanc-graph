@@ -19,7 +19,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<TelemetryProvider>(context);
+    // Only rebuild when the theme changes, not on every telemetry frame.
+    final themeMode =
+        context.select<TelemetryProvider, ThemeMode>((p) => p.themeMode);
 
     // Curated Premium Themes
     final darkTheme = ThemeData(
@@ -96,7 +98,7 @@ class MyApp extends StatelessWidget {
       title: 'Jetson Telemetry Graph',
       theme: lightTheme,
       darkTheme: darkTheme,
-      themeMode: provider.themeMode,
+      themeMode: themeMode,
       home: const DashboardPage(),
       debugShowCheckedModeBanner: false,
     );
@@ -232,6 +234,7 @@ class DashboardPage extends StatelessWidget {
   }
 
   Widget _buildErrorBanner(BuildContext context, TelemetryProvider provider) {
+    final isDark = provider.themeMode == ThemeMode.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -257,7 +260,10 @@ class DashboardPage extends StatelessWidget {
                 ),
                 Text(
                   provider.errorMessage!,
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white70 : Colors.red[900],
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

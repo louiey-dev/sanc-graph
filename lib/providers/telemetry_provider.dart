@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:csv/csv.dart';
 import '../models/telemetry_data.dart';
 import '../services/telemetry_service.dart';
 import '../utils/csv_saver.dart';
@@ -21,6 +20,10 @@ class TelemetryProvider with ChangeNotifier {
 
   // Data history
   final List<TelemetryData> _dataHistory = [];
+  // Hard cap on retained samples to prevent unbounded memory growth during
+  // long sessions. Well above the max display window; live CSV rows are written
+  // incrementally so trimming here never drops recorded data.
+  static const int _maxHistoryBuffer = 20000;
   int _maxDisplayPoints = 1000;
   bool _isSavingCsv = false;
   CsvWriter? _activeCsvWriter;
@@ -167,6 +170,10 @@ class TelemetryProvider with ChangeNotifier {
             }
             _activeCsvWriter!.writeRow(row);
           }
+          // Trim to the retention cap to bound memory on long sessions.
+          if (_dataHistory.length > _maxHistoryBuffer) {
+            _dataHistory.removeRange(0, _dataHistory.length - _maxHistoryBuffer);
+          }
           notifyListeners();
         },
         onError: (error) {
@@ -312,34 +319,6 @@ class TelemetryProvider with ChangeNotifier {
     await _activeCsvWriter?.close();
     _activeCsvWriter = null;
     notifyListeners();
-  }
-
-  /// Generates CSV content from the collected history or custom data list using discovered metrics
-  String exportToCsv({List<TelemetryData>? dataList}) {
-    final List<List<dynamic>> rows = [];
-    final list = dataList ?? _dataHistory;
-
-    // Header
-    final List<String> header = ['ISO_Timestamp', 'Epoch_ms', 'Sequence'];
-    for (final metric in _discoveredMetrics) {
-      header.add('${metric.displayName}${metric.unit.isNotEmpty ? ' (${metric.unit.trim()})' : ''}');
-    }
-    rows.add(header);
-
-    // Data rows
-    for (final data in list) {
-      final List<dynamic> row = [
-        DateTime.fromMillisecondsSinceEpoch(data.timestamp).toIso8601String(),
-        data.timestamp,
-        data.seq,
-      ];
-      for (final metric in _discoveredMetrics) {
-        row.add(data.metrics[metric.key]);
-      }
-      rows.add(row);
-    }
-
-    return const ListToCsvConverter().convert(rows);
   }
 
   @override

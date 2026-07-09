@@ -9,8 +9,9 @@ class TelemetryProvider with ChangeNotifier {
   StreamSubscription<TelemetryData>? _subscription;
 
   // Connection settings
-  String _ip = '192.168.1.100';
-  int _port = 8765;
+  // String _ip = '192.168.1.100';
+  String _ip = 'localhost';
+  int _port = 18765;
   bool _isSimulated = false;
 
   // Connection states
@@ -24,6 +25,9 @@ class TelemetryProvider with ChangeNotifier {
   // long sessions. Well above the max display window; live CSV rows are written
   // incrementally so trimming here never drops recorded data.
   static const int _maxHistoryBuffer = 20000;
+  // Cumulative count of every packet received this session. Unlike
+  // _dataHistory.length (capped at _maxHistoryBuffer), this never trims.
+  int _totalSampleCount = 0;
   int _maxDisplayPoints = 1000;
   bool _isSavingCsv = false;
   CsvWriter? _activeCsvWriter;
@@ -71,6 +75,7 @@ class TelemetryProvider with ChangeNotifier {
   bool get isConnected => _isConnected;
   String? get errorMessage => _errorMessage;
   List<TelemetryData> get dataHistory => _dataHistory;
+  int get totalSampleCount => _totalSampleCount;
   int get maxDisplayPoints => _maxDisplayPoints;
   ThemeMode get themeMode => _themeMode;
   bool get isSidebarCollapsed => _isSidebarCollapsed;
@@ -123,7 +128,9 @@ class TelemetryProvider with ChangeNotifier {
   }
 
   void toggleTheme() {
-    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    _themeMode = _themeMode == ThemeMode.dark
+        ? ThemeMode.light
+        : ThemeMode.dark;
     notifyListeners();
   }
 
@@ -159,9 +166,12 @@ class TelemetryProvider with ChangeNotifier {
           _discoverMetricsFromData(data);
 
           _dataHistory.add(data);
+          _totalSampleCount++;
           if (_isSavingCsv && _activeCsvWriter != null) {
             final List<dynamic> row = [
-              DateTime.fromMillisecondsSinceEpoch(data.timestamp).toIso8601String(),
+              DateTime.fromMillisecondsSinceEpoch(
+                data.timestamp,
+              ).toIso8601String(),
               data.timestamp,
               data.seq,
             ];
@@ -172,7 +182,10 @@ class TelemetryProvider with ChangeNotifier {
           }
           // Trim to the retention cap to bound memory on long sessions.
           if (_dataHistory.length > _maxHistoryBuffer) {
-            _dataHistory.removeRange(0, _dataHistory.length - _maxHistoryBuffer);
+            _dataHistory.removeRange(
+              0,
+              _dataHistory.length - _maxHistoryBuffer,
+            );
           }
           notifyListeners();
         },
@@ -213,15 +226,16 @@ class TelemetryProvider with ChangeNotifier {
       if (!_discoveredMetrics.any((m) => m.key == key)) {
         final displayName = _formatKeyName(key);
         final unit = _detectUnit(key);
-        final color = _colorPalette[_discoveredMetrics.length % _colorPalette.length];
-        
+        final color =
+            _colorPalette[_discoveredMetrics.length % _colorPalette.length];
+
         // Smart heuristic for axis allocation
         final firstVal = data.metrics[key];
-        final isHighValueOrClockOrPower = 
-            key.contains('clk') || 
-            key.contains('pwr') || 
-            key.contains('mw') || 
-            key.contains('mhz') || 
+        final isHighValueOrClockOrPower =
+            key.contains('clk') ||
+            key.contains('pwr') ||
+            key.contains('mw') ||
+            key.contains('mhz') ||
             (firstVal != null && firstVal > 150);
 
         final metadata = MetricMetadata(
@@ -234,7 +248,7 @@ class TelemetryProvider with ChangeNotifier {
         _discoveredMetrics.add(metadata);
         _metricColors[key] = color;
         _metricOnRightAxis[key] = isHighValueOrClockOrPower;
-        
+
         // Auto-select the first 4 discovered metrics to keep the initial graph clean but active
         _selectedMetrics[key] = _discoveredMetrics.length <= 4;
         newlyDiscovered = true;
@@ -262,11 +276,20 @@ class TelemetryProvider with ChangeNotifier {
   String _detectUnit(String key) {
     final lower = key.toLowerCase();
     if (lower.endsWith('_c') || lower.contains('temp')) return '°C';
-    if (lower.endsWith('_pct') || lower.contains('load') || lower.contains('percent')) return '%';
-    if (lower.endsWith('_mhz') || lower.contains('clk') || lower.contains('clock')) return ' MHz';
+    if (lower.endsWith('_pct') ||
+        lower.contains('load') ||
+        lower.contains('percent'))
+      return '%';
+    if (lower.endsWith('_mhz') ||
+        lower.contains('clk') ||
+        lower.contains('clock'))
+      return ' MHz';
     if (lower.endsWith('_mw') || lower.contains('power')) return ' mW';
     if (lower.contains('volt') || lower.endsWith('_v')) return ' V';
-    if (lower.contains('amp') || lower.contains('current') || lower.endsWith('_a')) return ' A';
+    if (lower.contains('amp') ||
+        lower.contains('current') ||
+        lower.endsWith('_a'))
+      return ' A';
     return '';
   }
 
@@ -285,6 +308,7 @@ class TelemetryProvider with ChangeNotifier {
   /// Clears collected data history (clears the plot) but preserves the metric list and configurations
   void clearData() {
     _dataHistory.clear();
+    _totalSampleCount = 0;
     notifyListeners();
   }
 

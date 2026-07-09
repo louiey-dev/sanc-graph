@@ -257,7 +257,7 @@ class _ControlPanelState extends State<ControlPanel> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'Samples: ${provider.dataHistory.length}',
+                    'Samples: ${provider.totalSampleCount}',
                     style: TextStyle(
                       fontSize: 11,
                       fontFamily: 'monospace',

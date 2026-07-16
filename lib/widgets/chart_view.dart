@@ -139,205 +139,222 @@ class ChartView extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: borderColor, width: 1),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 24, 16),
-        child: Column(
-          children: [
-            // Chart Header / Legend summary
-            _buildChartHeader(context, leftKeys, rightKeys, provider, isDark),
-            const SizedBox(height: 16),
-            // The Graph
-            Expanded(
-              child: LineChart(
-                LineChartData(
-                  minX: xMin,
-                  maxX: xMax,
-                  minY: leftMin,
-                  maxY: leftMax,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: true,
-                    horizontalInterval: (leftMax - leftMin) / 5,
-                    verticalInterval: max(1.0, (xMax - xMin) / 5),
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
-                      strokeWidth: 1,
-                    ),
-                    getDrawingVerticalLine: (value) => FlLine(
-                      color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(
-                    show: true,
-                    border: Border.all(
-                      color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                      width: 1,
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    // Top titles: hide
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    // Bottom titles: Sequence (X-Axis)
-                    bottomTitles: AxisTitles(
-                      axisNameWidget: Text(
-                        'Sequence (seq)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.grey[400] : Colors.grey[600],
-                        ),
-                      ),
-                      axisNameSize: 20,
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 26,
-                        interval: max(1.0, (xMax - xMin) / 5).floorToDouble(),
-                        getTitlesWidget: (value, meta) {
-                          return SideTitleWidget(
-                            meta: meta,
-                            space: 4,
-                            child: Text(
-                              value.toInt().toString(),
-                              style: TextStyle(
-                                color: isDark ? Colors.grey[450] : Colors.grey[655],
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    // Left titles: Left Y-Axis metrics
-                    leftTitles: AxisTitles(
-                      axisNameWidget: leftKeys.isNotEmpty
-                          ? Text(
-                              'Left Axis Metrics',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              ),
-                            )
-                          : null,
-                      axisNameSize: 20,
-                      sideTitles: SideTitles(
-                        showTitles: leftKeys.isNotEmpty,
-                        reservedSize: 50,
-                        interval: leftRange / 5,
-                        getTitlesWidget: (value, meta) {
-                          return SideTitleWidget(
-                            meta: meta,
-                            space: 6,
-                            child: Text(
-                              value.toStringAsFixed(1),
-                              style: TextStyle(
-                                color: isDark ? Colors.grey[450] : Colors.grey[655],
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    // Right titles: Right Y-Axis metrics (unscaled display)
-                    rightTitles: AxisTitles(
-                      axisNameWidget: rightKeys.isNotEmpty
-                          ? Text(
-                              'Right Axis Metrics',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              ),
-                            )
-                          : null,
-                      axisNameSize: 20,
-                      sideTitles: SideTitles(
-                        showTitles: rightKeys.isNotEmpty,
-                        reservedSize: 60,
-                        interval: leftRange / 5,
-                        getTitlesWidget: (value, meta) {
-                          // Unscale the value from Left axis range back to Right axis range
-                          double unscaled = rightMin +
-                              ((value - leftMin) / (leftMax - leftMin)) *
-                                  (rightMax - rightMin);
-                          
-                          // Handle negative values due to padding
-                          if (unscaled < 0) unscaled = 0;
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isCompact = constraints.maxHeight < 280;
+          final bool isVeryCompact = constraints.maxHeight < 140;
 
-                          return SideTitleWidget(
-                            meta: meta,
-                            space: 6,
-                            child: Text(
-                              unscaled.toStringAsFixed(0),
-                              style: TextStyle(
-                                color: isDark ? Colors.grey[450] : Colors.grey[655],
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineTouchData: LineTouchData(
-                    enabled: true,
-                    handleBuiltInTouches: true,
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipColor: (spot) => isDark ? const Color(0xFF1E293B) : Colors.white.withValues(alpha: 0.95),
-                      tooltipBorder: BorderSide(color: borderColor, width: 1),
-                      maxContentWidth: 220,
-                      getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                        return touchedSpots.map((LineBarSpot touchedSpot) {
-                          final barIndex = touchedSpot.barIndex;
-                          if (barIndex < 0 || barIndex >= addedKeys.length) return null;
-                          final key = addedKeys[barIndex];
-
-                          final MetricMetadata metadata = provider.discoveredMetrics.firstWhere((m) => m.key == key);
-                          final isOnRight = provider.isMetricOnRightAxis(key);
-                          
-                          // Unscale if it's on the right axis
-                          double realVal = touchedSpot.y;
-                          if (isOnRight) {
-                            realVal = rightMin +
-                                ((touchedSpot.y - leftMin) / (leftMax - leftMin)) *
-                                    (rightMax - rightMin);
-                          }
-
-                          return LineTooltipItem(
-                            '${metadata.displayName}\n',
-                            TextStyle(
-                              color: isDark ? Colors.white : Colors.black87,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: '${realVal.toStringAsFixed(2)}${metadata.unit}',
-                                style: TextStyle(
-                                  color: provider.getMetricColor(key),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                            ],
-                          );
-                        }).whereType<LineTooltipItem>().toList();
-                      },
-                    ),
-                  ),
-                  lineBarsData: lineBarsData,
+          if (isVeryCompact) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Text(
+                  'Graph area too small',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
               ),
+            );
+          }
+
+          final padding = isCompact
+              ? const EdgeInsets.fromLTRB(12, 10, 16, 8)
+              : const EdgeInsets.fromLTRB(16, 24, 24, 16);
+
+          return Padding(
+            padding: padding,
+            child: Column(
+              children: [
+                if (!isCompact) ...[
+                  _buildChartHeader(context, leftKeys, rightKeys, provider, isDark),
+                  const SizedBox(height: 16),
+                ],
+                Expanded(
+                  child: LineChart(
+                    LineChartData(
+                      minX: xMin,
+                      maxX: xMax,
+                      minY: leftMin,
+                      maxY: leftMax,
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: true,
+                        horizontalInterval: (leftMax - leftMin) / 5,
+                        verticalInterval: max(1.0, (xMax - xMin) / 5),
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
+                          strokeWidth: 1,
+                        ),
+                        getDrawingVerticalLine: (value) => FlLine(
+                          color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
+                          strokeWidth: 1,
+                        ),
+                      ),
+                      borderData: FlBorderData(
+                        show: true,
+                        border: Border.all(
+                          color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                          width: 1,
+                        ),
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: AxisTitles(
+                          axisNameWidget: isCompact
+                              ? null
+                              : Text(
+                                  'Sequence (seq)',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                          axisNameSize: isCompact ? 0 : 20,
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: isCompact ? 16 : 26,
+                            interval: max(1.0, (xMax - xMin) / 5).floorToDouble(),
+                            getTitlesWidget: (value, meta) {
+                              return SideTitleWidget(
+                                meta: meta,
+                                space: 4,
+                                child: Text(
+                                  value.toInt().toString(),
+                                  style: TextStyle(
+                                    color: isDark ? Colors.grey[450] : Colors.grey[655],
+                                    fontSize: 9,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          axisNameWidget: (leftKeys.isEmpty || isCompact)
+                              ? null
+                              : Text(
+                                  'Left Axis Metrics',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                          axisNameSize: isCompact ? 0 : 20,
+                          sideTitles: SideTitles(
+                            showTitles: leftKeys.isNotEmpty,
+                            reservedSize: isCompact ? 35 : 50,
+                            interval: leftRange / 5,
+                            getTitlesWidget: (value, meta) {
+                              return SideTitleWidget(
+                                meta: meta,
+                                space: 4,
+                                child: Text(
+                                  value.toStringAsFixed(isCompact ? 0 : 1),
+                                  style: TextStyle(
+                                    color: isDark ? Colors.grey[450] : Colors.grey[655],
+                                    fontSize: 9,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        rightTitles: AxisTitles(
+                          axisNameWidget: (rightKeys.isEmpty || isCompact)
+                              ? null
+                              : Text(
+                                  'Right Axis Metrics',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                          axisNameSize: isCompact ? 0 : 20,
+                          sideTitles: SideTitles(
+                            showTitles: rightKeys.isNotEmpty,
+                            reservedSize: isCompact ? 35 : 60,
+                            interval: leftRange / 5,
+                            getTitlesWidget: (value, meta) {
+                              double unscaled = rightMin +
+                                  ((value - leftMin) / (leftMax - leftMin)) *
+                                      (rightMax - rightMin);
+                              if (unscaled < 0) unscaled = 0;
+                              return SideTitleWidget(
+                                meta: meta,
+                                space: 4,
+                                child: Text(
+                                  unscaled.toStringAsFixed(0),
+                                  style: TextStyle(
+                                    color: isDark ? Colors.grey[450] : Colors.grey[655],
+                                    fontSize: 9,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      lineTouchData: LineTouchData(
+                        enabled: true,
+                        handleBuiltInTouches: true,
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (spot) => isDark ? const Color(0xFF1E293B) : Colors.white.withValues(alpha: 0.95),
+                          tooltipBorder: BorderSide(color: borderColor, width: 1),
+                          maxContentWidth: 220,
+                          getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                            return touchedSpots.map((LineBarSpot touchedSpot) {
+                              final barIndex = touchedSpot.barIndex;
+                              if (barIndex < 0 || barIndex >= addedKeys.length) return null;
+                              final key = addedKeys[barIndex];
+
+                              final MetricMetadata metadata = provider.discoveredMetrics.firstWhere((m) => m.key == key);
+                              final isOnRight = provider.isMetricOnRightAxis(key);
+                              
+                              double realVal = touchedSpot.y;
+                              if (isOnRight) {
+                                realVal = rightMin +
+                                    ((touchedSpot.y - leftMin) / (leftMax - leftMin)) *
+                                        (rightMax - rightMin);
+                              }
+
+                              return LineTooltipItem(
+                                '${metadata.displayName}\n',
+                                TextStyle(
+                                  color: isDark ? Colors.white : Colors.black87,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text: '${realVal.toStringAsFixed(2)}${metadata.unit}',
+                                    style: TextStyle(
+                                      color: provider.getMetricColor(key),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).whereType<LineTooltipItem>().toList();
+                          },
+                        ),
+                      ),
+                      lineBarsData: lineBarsData,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -351,35 +368,37 @@ class ChartView extends StatelessWidget {
         side: BorderSide(color: borderColor, width: 1),
       ),
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.analytics_outlined,
-                size: 80,
-                color: isDark ? Colors.grey[700] : Colors.grey[300],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No Telemetry Data Yet',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.analytics_outlined,
+                  size: 48,
+                  color: isDark ? Colors.grey[700] : Colors.grey[300],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Configure the IP and Port at the top, then click "Connect".\nOr toggle "Simulation" mode to test the UI immediately.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.grey[500] : Colors.grey[600],
+                const SizedBox(height: 12),
+                Text(
+                  'No Telemetry Data Yet',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  'Configure the IP and Port at the top, then click "Connect".\nOr toggle "Simulation" mode to test the UI immediately.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -395,35 +414,37 @@ class ChartView extends StatelessWidget {
         side: BorderSide(color: borderColor, width: 1),
       ),
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.check_box_outline_blank,
-                size: 80,
-                color: isDark ? Colors.grey[700] : Colors.grey[300],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No Metrics Selected',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.check_box_outline_blank,
+                  size: 48,
+                  color: isDark ? Colors.grey[700] : Colors.grey[300],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Please select at least one metric from the left sidebar\nto display it on the graph.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.grey[500] : Colors.grey[600],
+                const SizedBox(height: 12),
+                Text(
+                  'No Metrics Selected',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  'Please select at least one metric from the left sidebar\nto display it on the graph.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

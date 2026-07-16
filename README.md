@@ -53,6 +53,8 @@ SSE (Server-Sent Events) HTTP stream
 
 - 2026.07.02
   - CSV start/stop buttom added
+- 2026.07.16
+  - add log panel at bottom
 
 ## Info
 

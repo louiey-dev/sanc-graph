@@ -4,6 +4,7 @@ import 'providers/telemetry_provider.dart';
 import 'widgets/chart_view.dart';
 import 'widgets/control_panel.dart';
 import 'widgets/sidebar.dart';
+import 'widgets/log_panel.dart';
 
 void main() {
   runApp(
@@ -226,6 +227,8 @@ class DashboardPage extends StatelessWidget {
                         ],
                       ),
               ),
+              const SizedBox(height: 16),
+              const LogPanel(),
             ],
           ),
         ),

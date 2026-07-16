@@ -5,15 +5,21 @@ class TelemetryData {
   final int timestamp;
   final int seq;
   final Map<String, double?> metrics;
+  final String rawPacket;
 
   TelemetryData({
     required this.timestamp,
     required this.seq,
     required this.metrics,
-  });
+    String? rawPacket,
+  }) : rawPacket = rawPacket ?? 'data: ${jsonEncode({
+          'ts': timestamp,
+          'seq': seq,
+          'd': metrics,
+        })}';
 
   /// Parse TelemetryData from a JSON map
-  factory TelemetryData.fromJson(Map<String, dynamic> json) {
+  factory TelemetryData.fromJson(Map<String, dynamic> json, {String? rawPacket}) {
     final ts = json['ts'] as int? ?? DateTime.now().millisecondsSinceEpoch;
     final seq = json['seq'] as int? ?? 0;
     final dMap = json['d'] as Map<String, dynamic>? ?? {};
@@ -34,6 +40,7 @@ class TelemetryData {
       timestamp: ts,
       seq: seq,
       metrics: metrics,
+      rawPacket: rawPacket,
     );
   }
 
@@ -47,7 +54,7 @@ class TelemetryData {
 
     try {
       final decoded = json.decode(jsonStr) as Map<String, dynamic>;
-      return TelemetryData.fromJson(decoded);
+      return TelemetryData.fromJson(decoded, rawPacket: trimmed);
     } catch (e) {
       // Failed to parse JSON
       return null;

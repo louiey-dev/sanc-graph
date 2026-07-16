@@ -41,6 +41,9 @@ class TelemetryProvider with ChangeNotifier {
   // UI States
   ThemeMode _themeMode = ThemeMode.dark;
   bool _isSidebarCollapsed = false;
+  bool _isLogPanelFolded = true;
+  final List<String> _logs = [];
+  static const int _maxLogsBuffer = 50;
 
   // Curated color palette for dynamic assignment
   static const List<Color> _colorPalette = [
@@ -81,6 +84,8 @@ class TelemetryProvider with ChangeNotifier {
   bool get isSidebarCollapsed => _isSidebarCollapsed;
   List<MetricMetadata> get discoveredMetrics => _discoveredMetrics;
   bool get isSavingCsv => _isSavingCsv;
+  bool get isLogPanelFolded => _isLogPanelFolded;
+  List<String> get logs => _logs;
 
   TelemetryProvider();
 
@@ -139,6 +144,16 @@ class TelemetryProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleLogPanel() {
+    _isLogPanelFolded = !_isLogPanelFolded;
+    notifyListeners();
+  }
+
+  void clearLogs() {
+    _logs.clear();
+    notifyListeners();
+  }
+
   /// Starts listening to the telemetry stream
   Future<void> startStream() async {
     await stopStream();
@@ -167,6 +182,18 @@ class TelemetryProvider with ChangeNotifier {
 
           _dataHistory.add(data);
           _totalSampleCount++;
+
+          // Accumulate logs in a list for the UI panel
+          _logs.add(data.rawPacket);
+          if (_logs.length > _maxLogsBuffer) {
+            _logs.removeAt(0);
+          }
+
+          // If the log panel is folded, print incoming packet strings to console
+          if (_isLogPanelFolded) {
+            // ignore: avoid_print
+            print(data.rawPacket);
+          }
           if (_isSavingCsv && _activeCsvWriter != null) {
             final List<dynamic> row = [
               DateTime.fromMillisecondsSinceEpoch(
@@ -275,21 +302,30 @@ class TelemetryProvider with ChangeNotifier {
   /// Helper to auto-detect units from metric key names
   String _detectUnit(String key) {
     final lower = key.toLowerCase();
-    if (lower.endsWith('_c') || lower.contains('temp')) return '°C';
+    if (lower.endsWith('_c') || lower.contains('temp')) {
+      return '°C';
+    }
     if (lower.endsWith('_pct') ||
         lower.contains('load') ||
-        lower.contains('percent'))
+        lower.contains('percent')) {
       return '%';
+    }
     if (lower.endsWith('_mhz') ||
         lower.contains('clk') ||
-        lower.contains('clock'))
+        lower.contains('clock')) {
       return ' MHz';
-    if (lower.endsWith('_mw') || lower.contains('power')) return ' mW';
-    if (lower.contains('volt') || lower.endsWith('_v')) return ' V';
+    }
+    if (lower.endsWith('_mw') || lower.contains('power')) {
+      return ' mW';
+    }
+    if (lower.contains('volt') || lower.endsWith('_v')) {
+      return ' V';
+    }
     if (lower.contains('amp') ||
         lower.contains('current') ||
-        lower.endsWith('_a'))
+        lower.endsWith('_a')) {
       return ' A';
+    }
     return '';
   }
 
@@ -309,6 +345,7 @@ class TelemetryProvider with ChangeNotifier {
   void clearData() {
     _dataHistory.clear();
     _totalSampleCount = 0;
+    _logs.clear();
     notifyListeners();
   }
 

@@ -38,6 +38,12 @@ class TelemetryProvider with ChangeNotifier {
   final Map<String, Color> _metricColors = {};
   final Map<String, bool> _metricOnRightAxis = {};
 
+  // Zoom and Pan state for plot area Y-axis and X-axis history
+  double _xZoomFactor = 1.0;
+  double _yZoomFactor = 1.0;
+  double _yPanOffset = 0.0;
+  double _xPanOffset = 0.0;
+
   // UI States
   ThemeMode _themeMode = ThemeMode.dark;
   bool _isSidebarCollapsed = false;
@@ -80,6 +86,10 @@ class TelemetryProvider with ChangeNotifier {
   List<TelemetryData> get dataHistory => _dataHistory;
   int get totalSampleCount => _totalSampleCount;
   int get maxDisplayPoints => _maxDisplayPoints;
+  double get xZoomFactor => _xZoomFactor;
+  double get yZoomFactor => _yZoomFactor;
+  double get yPanOffset => _yPanOffset;
+  double get xPanOffset => _xPanOffset;
   ThemeMode get themeMode => _themeMode;
   bool get isSidebarCollapsed => _isSidebarCollapsed;
   List<MetricMetadata> get discoveredMetrics => _discoveredMetrics;
@@ -88,6 +98,34 @@ class TelemetryProvider with ChangeNotifier {
   List<String> get logs => _logs;
 
   TelemetryProvider();
+
+  void setXZoomFactor(double zoom) {
+    _xZoomFactor = zoom.clamp(1.0, 50.0);
+    notifyListeners();
+  }
+
+  void setYZoomFactor(double zoom) {
+    _yZoomFactor = zoom.clamp(0.5, 50.0);
+    notifyListeners();
+  }
+
+  void setYPanOffset(double pan) {
+    _yPanOffset = pan.clamp(-3.0, 3.0);
+    notifyListeners();
+  }
+
+  void setXPanOffset(double offset) {
+    _xPanOffset = offset < 0.0 ? 0.0 : offset;
+    notifyListeners();
+  }
+
+  void resetZoomAndPan() {
+    _xZoomFactor = 1.0;
+    _yZoomFactor = 1.0;
+    _yPanOffset = 0.0;
+    _xPanOffset = 0.0;
+    notifyListeners();
+  }
 
   // Setters and Toggles
   void setConnectionSettings(String ip, int port) {

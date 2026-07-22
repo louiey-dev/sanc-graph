@@ -1,12 +1,22 @@
 import 'dart:math';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../models/telemetry_data.dart';
 import '../providers/telemetry_provider.dart';
 
-class ChartView extends StatelessWidget {
+class ChartView extends StatefulWidget {
   const ChartView({super.key});
+
+  @override
+  State<ChartView> createState() => _ChartViewState();
+}
+
+class _ChartViewState extends State<ChartView> {
+  Offset? _lastPointerPosition;
+  DateTime? _lastClickTime;
 
   @override
   Widget build(BuildContext context) {
@@ -20,8 +30,10 @@ class ChartView extends StatelessWidget {
       return _buildEmptyState(context, isDark, cardColor, borderColor);
     }
 
-    // Slice history to show only the last maxDisplayPoints
-    final startIndex = max(0, history.length - provider.maxDisplayPoints);
+    // Slice visible history window based on maxDisplayPoints
+    final totalHistory = history.length;
+    final windowSize = min(provider.maxDisplayPoints, totalHistory);
+    final startIndex = max(0, totalHistory - windowSize);
     final visibleData = history.sublist(startIndex);
 
     // Filter out which metrics are selected
@@ -38,53 +50,81 @@ class ChartView extends StatelessWidget {
     final leftKeys = selectedKeys.where((k) => !provider.isMetricOnRightAxis(k)).toList();
     final rightKeys = selectedKeys.where((k) => provider.isMetricOnRightAxis(k)).toList();
 
-    // Calculate Min/Max for Left Axis
-    double leftMin = double.infinity;
-    double leftMax = double.negativeInfinity;
+    // Calculate Base Min/Max for Left Axis
+    double leftAutoMin = double.infinity;
+    double leftAutoMax = double.negativeInfinity;
 
     for (final data in visibleData) {
       for (final key in leftKeys) {
         final val = data.metrics[key];
         if (val != null) {
-          if (val < leftMin) leftMin = val;
-          if (val > leftMax) leftMax = val;
+          if (val < leftAutoMin) leftAutoMin = val;
+          if (val > leftAutoMax) leftAutoMax = val;
         }
       }
     }
 
     // Defaults if no left metrics selected or all values are null
-    if (leftMin == double.infinity) leftMin = 0.0;
-    if (leftMax == double.negativeInfinity) leftMax = 100.0;
-    
-    // Add padding to Left Axis
-    double leftRange = leftMax - leftMin;
-    if (leftRange == 0) leftRange = 1.0;
-    leftMin = (leftMin - leftRange * 0.08).clamp(double.negativeInfinity, double.infinity);
-    leftMax = leftMax + leftRange * 0.08;
+    if (leftAutoMin == double.infinity) leftAutoMin = 0.0;
+    if (leftAutoMax == double.negativeInfinity) leftAutoMax = 100.0;
 
-    // Calculate Min/Max for Right Axis
-    double rightMin = double.infinity;
-    double rightMax = double.negativeInfinity;
+    // Add margin padding to Left Axis base range
+    double leftAutoRange = leftAutoMax - leftAutoMin;
+    if (leftAutoRange == 0) {
+      leftAutoRange = leftAutoMax.abs() == 0 ? 2.0 : leftAutoMax.abs() * 0.2;
+      leftAutoMin = leftAutoMin - leftAutoRange / 2;
+      leftAutoMax = leftAutoMax + leftAutoRange / 2;
+    } else {
+      leftAutoMin = leftAutoMin - leftAutoRange * 0.08;
+      leftAutoMax = leftAutoMax + leftAutoRange * 0.08;
+    }
+    leftAutoRange = leftAutoMax - leftAutoMin;
+
+    // Apply Y-Zoom and Y-Pan to Left Axis bounds
+    final double leftAutoCenter = (leftAutoMin + leftAutoMax) / 2;
+    final double leftCenter = leftAutoCenter - (provider.yPanOffset * (leftAutoRange / 2));
+    final double leftZoomedRange = leftAutoRange / provider.yZoomFactor;
+    double leftMin = leftCenter - leftZoomedRange / 2;
+    double leftMax = leftCenter + leftZoomedRange / 2;
+    double leftRange = leftMax - leftMin;
+
+    // Calculate Base Min/Max for Right Axis
+    double rightAutoMin = double.infinity;
+    double rightAutoMax = double.negativeInfinity;
 
     for (final data in visibleData) {
       for (final key in rightKeys) {
         final val = data.metrics[key];
         if (val != null) {
-          if (val < rightMin) rightMin = val;
-          if (val > rightMax) rightMax = val;
+          if (val < rightAutoMin) rightAutoMin = val;
+          if (val > rightAutoMax) rightAutoMax = val;
         }
       }
     }
 
     // Defaults if no right metrics selected or all values are null
-    if (rightMin == double.infinity) rightMin = 0.0;
-    if (rightMax == double.negativeInfinity) rightMax = 1000.0;
+    if (rightAutoMin == double.infinity) rightAutoMin = 0.0;
+    if (rightAutoMax == double.negativeInfinity) rightAutoMax = 100.0;
 
-    // Add padding to Right Axis
+    // Add margin padding to Right Axis base range
+    double rightAutoRange = rightAutoMax - rightAutoMin;
+    if (rightAutoRange == 0) {
+      rightAutoRange = rightAutoMax.abs() == 0 ? 2.0 : rightAutoMax.abs() * 0.2;
+      rightAutoMin = rightAutoMin - rightAutoRange / 2;
+      rightAutoMax = rightAutoMax + rightAutoRange / 2;
+    } else {
+      rightAutoMin = rightAutoMin - rightAutoRange * 0.08;
+      rightAutoMax = rightAutoMax + rightAutoRange * 0.08;
+    }
+    rightAutoRange = rightAutoMax - rightAutoMin;
+
+    // Apply Y-Zoom and Y-Pan to Right Axis bounds
+    final double rightAutoCenter = (rightAutoMin + rightAutoMax) / 2;
+    final double rightCenter = rightAutoCenter - (provider.yPanOffset * (rightAutoRange / 2));
+    final double rightZoomedRange = rightAutoRange / provider.yZoomFactor;
+    double rightMin = rightCenter - rightZoomedRange / 2;
+    double rightMax = rightCenter + rightZoomedRange / 2;
     double rightRange = rightMax - rightMin;
-    if (rightRange == 0) rightRange = 10.0;
-    rightMin = (rightMin - rightRange * 0.08).clamp(0.0, double.infinity); // Power/Clock shouldn't be negative
-    rightMax = rightMax + rightRange * 0.08;
 
     // Map data points into LineChartBarData
     final List<LineChartBarData> lineBarsData = [];
@@ -92,8 +132,8 @@ class ChartView extends StatelessWidget {
 
     // Scale function for Right Axis to Left Axis
     double scaleRightToLeft(double value) {
-      if (rightMax == rightMin) return leftMin + (leftMax - leftMin) / 2;
-      return leftMin + ((value - rightMin) / (rightMax - rightMin)) * (leftMax - leftMin);
+      if (rightRange == 0) return leftMin + leftRange / 2;
+      return leftMin + ((value - rightMin) / rightRange) * leftRange;
     }
 
     // Helper to build spots
@@ -128,9 +168,20 @@ class ChartView extends StatelessWidget {
       }
     }
 
-    // X-Axis Min/Max
-    final double xMin = visibleData.first.seq.toDouble();
-    final double xMax = visibleData.last.seq.toDouble();
+    // X-Axis Min/Max calculation with X-Zoom and X-Pan
+    final double rawSeqMin = visibleData.first.seq.toDouble();
+    final double rawSeqMax = visibleData.last.seq.toDouble();
+    double baseSeqSpan = rawSeqMax - rawSeqMin;
+    if (baseSeqSpan <= 0) baseSeqSpan = 1.0;
+
+    // Sequence center (shifted backward by xPanOffset)
+    final double rawCenter = (rawSeqMin + rawSeqMax) / 2;
+    final double seqCenter = rawCenter - provider.xPanOffset;
+
+    // Zoomed sequence span (smaller span = wider horizontal display!)
+    final double zoomedSeqSpan = baseSeqSpan / provider.xZoomFactor;
+    final double xMin = seqCenter - (zoomedSeqSpan / 2);
+    final double xMax = seqCenter + (zoomedSeqSpan / 2);
 
     return Card(
       elevation: 4,
@@ -170,8 +221,83 @@ class ChartView extends StatelessWidget {
                   const SizedBox(height: 16),
                 ],
                 Expanded(
-                  child: LineChart(
+                  child: Listener(
+                    onPointerDown: (event) {
+                      _lastPointerPosition = event.position;
+                      final now = DateTime.now();
+                      if (_lastClickTime != null &&
+                          now.difference(_lastClickTime!) < const Duration(milliseconds: 300)) {
+                        provider.resetZoomAndPan();
+                        _lastClickTime = null;
+                      } else {
+                        _lastClickTime = now;
+                      }
+                    },
+                    onPointerMove: (event) {
+                      if (_lastPointerPosition != null) {
+                        final Offset delta = event.position - _lastPointerPosition!;
+                        _lastPointerPosition = event.position;
+
+                        final double dx = delta.dx;
+                        final double dy = delta.dy;
+
+                        // 1. Horizontal Drag -> Pan X-axis timeline history
+                        if (dx.abs() > 0.2) {
+                          final double seqSpanPerPixel = (xMax - xMin) / 400.0;
+                          final double deltaSeq = -dx * seqSpanPerPixel;
+                          provider.setXPanOffset(provider.xPanOffset + deltaSeq);
+                        }
+
+                        // 2. Vertical Drag -> Pan Y-axis viewport height
+                        if (dy.abs() > 0.2) {
+                          final double currentPan = provider.yPanOffset;
+                          provider.setYPanOffset(currentPan + (dy / 200.0));
+                        }
+                      }
+                    },
+                    onPointerUp: (_) => _lastPointerPosition = null,
+                    onPointerCancel: (_) => _lastPointerPosition = null,
+                    onPointerSignal: (pointerSignal) {
+                      if (pointerSignal is PointerScrollEvent) {
+                        final double dy = pointerSignal.scrollDelta.dy;
+                        final double dx = pointerSignal.scrollDelta.dx;
+                        final double delta = dy != 0 ? dy : dx;
+
+                        if (delta != 0) {
+                          final pressed = HardwareKeyboard.instance.logicalKeysPressed;
+                          final isShiftPressed = HardwareKeyboard.instance.isShiftPressed ||
+                              pressed.contains(LogicalKeyboardKey.shift) ||
+                              pressed.contains(LogicalKeyboardKey.shiftLeft) ||
+                              pressed.contains(LogicalKeyboardKey.shiftRight);
+
+                          final isCtrlPressed = HardwareKeyboard.instance.isControlPressed ||
+                              pressed.contains(LogicalKeyboardKey.control) ||
+                              pressed.contains(LogicalKeyboardKey.controlLeft) ||
+                              pressed.contains(LogicalKeyboardKey.controlRight);
+
+                          if (isShiftPressed || isCtrlPressed || (dy == 0 && dx != 0)) {
+                            // Shift + Scroll OR Ctrl + Scroll: Zoom X-axis inside plot area (xZoomFactor)
+                            final double currentZoom = provider.xZoomFactor;
+                            double nextZoom = delta < 0 ? (currentZoom * 1.25) : (currentZoom / 1.25);
+                            nextZoom = nextZoom.clamp(1.0, 50.0);
+                            if ((nextZoom - currentZoom).abs() > 0.001) {
+                              provider.setXZoomFactor(nextZoom);
+                            }
+                          } else {
+                            // Mouse Scroll alone: Zoom Y-axis inside plot area (yZoomFactor)
+                            final double currentZoom = provider.yZoomFactor;
+                            double nextZoom = delta < 0 ? (currentZoom * 1.25) : (currentZoom / 1.25);
+                            nextZoom = nextZoom.clamp(0.5, 50.0);
+                            if ((nextZoom - currentZoom).abs() > 0.001) {
+                              provider.setYZoomFactor(nextZoom);
+                            }
+                          }
+                        }
+                      }
+                    },
+                    child: LineChart(
                     LineChartData(
+                      clipData: const FlClipData.all(),
                       minX: xMin,
                       maxX: xMax,
                       minY: leftMin,
@@ -179,7 +305,7 @@ class ChartView extends StatelessWidget {
                       gridData: FlGridData(
                         show: true,
                         drawVerticalLine: true,
-                        horizontalInterval: (leftMax - leftMin) / 5,
+                        horizontalInterval: leftRange / 5,
                         verticalInterval: max(1.0, (xMax - xMin) / 5),
                         getDrawingHorizontalLine: (value) => FlLine(
                           color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
@@ -253,7 +379,7 @@ class ChartView extends StatelessWidget {
                                 meta: meta,
                                 space: 4,
                                 child: Text(
-                                  value.toStringAsFixed(isCompact ? 0 : 1),
+                                  value.toStringAsFixed(leftRange < 5 ? 1 : 0),
                                   style: TextStyle(
                                     color: isDark ? Colors.grey[450] : Colors.grey[655],
                                     fontSize: 9,
@@ -281,15 +407,19 @@ class ChartView extends StatelessWidget {
                             reservedSize: isCompact ? 35 : 60,
                             interval: leftRange / 5,
                             getTitlesWidget: (value, meta) {
-                              double unscaled = rightMin +
-                                  ((value - leftMin) / (leftMax - leftMin)) *
-                                      (rightMax - rightMin);
-                              if (unscaled < 0) unscaled = 0;
+                              if (leftRange == 0 || rightRange == 0) {
+                                return const SizedBox.shrink();
+                              }
+                              final double norm = (value - leftMin) / leftRange;
+                              final double unscaled = rightMin + norm * rightRange;
+                              final String label = rightRange < 5
+                                  ? unscaled.toStringAsFixed(1)
+                                  : unscaled.round().toString();
                               return SideTitleWidget(
                                 meta: meta,
                                 space: 4,
                                 child: Text(
-                                  unscaled.toStringAsFixed(0),
+                                  label,
                                   style: TextStyle(
                                     color: isDark ? Colors.grey[450] : Colors.grey[655],
                                     fontSize: 9,
@@ -351,7 +481,8 @@ class ChartView extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
+              ),
+            ],
             ),
           );
         },
@@ -482,10 +613,156 @@ class ChartView extends StatelessWidget {
             ),
           ],
         ),
-        // Simple axis allocation indicator
         Wrap(
           spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            // Reset / Live Button (shown when zoomed in, panned Y, or viewing history)
+            if (provider.xZoomFactor != 1.0 || provider.yZoomFactor != 1.0 || provider.yPanOffset != 0.0 || provider.xPanOffset > 0)
+              InkWell(
+                onTap: () => provider.resetZoomAndPan(),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        provider.xPanOffset > 0 ? Icons.play_arrow : Icons.restart_alt,
+                        size: 13,
+                        color: Colors.amber,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        provider.xPanOffset > 0 ? 'Jump to Live' : 'Reset View',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // History Offset Badge
+            if (provider.xPanOffset > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.history, size: 13, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Text(
+                      'History: -${provider.xPanOffset.round()} pts',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // X-Zoom Scale Control Badge
+            Tooltip(
+              message: 'X-Axis Zoom | Shift+Wheel or Ctrl+Wheel to zoom X-axis | Click [+] / [-] buttons',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[800] : Colors.grey[200],
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.unfold_more_sharp, size: 12, color: Colors.blueAccent),
+                    const SizedBox(width: 3),
+                    Text(
+                      'X-Zoom: ${provider.xZoomFactor.toStringAsFixed(1)}x',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: isDark ? Colors.grey[300] : Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => provider.setXZoomFactor((provider.xZoomFactor * 1.25).clamp(1.0, 50.0)),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(Icons.add_circle_outline, size: 13, color: Colors.blueAccent),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => provider.setXZoomFactor((provider.xZoomFactor / 1.25).clamp(1.0, 50.0)),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(Icons.remove_circle_outline, size: 13, color: Colors.blueAccent),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Y-Zoom Scale Control Badge
+            Tooltip(
+              message: 'Y-Axis Height Scale | Mouse Wheel to zoom Y-axis | Click [+] / [-] buttons',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[800] : Colors.grey[200],
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.height, size: 12, color: Colors.purpleAccent),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Y: ${provider.yZoomFactor.toStringAsFixed(1)}x',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: isDark ? Colors.grey[300] : Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => provider.setYZoomFactor((provider.yZoomFactor * 1.25).clamp(0.5, 50.0)),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(Icons.add_circle_outline, size: 13, color: Colors.purpleAccent),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => provider.setYZoomFactor((provider.yZoomFactor / 1.25).clamp(0.5, 50.0)),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(Icons.remove_circle_outline, size: 13, color: Colors.purpleAccent),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             if (leftKeys.isNotEmpty)
               _buildAxisIndicator('Left Axis (1st)', Colors.blue, isDark),
             if (rightKeys.isNotEmpty)

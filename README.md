@@ -56,6 +56,8 @@ SSE (Server-Sent Events) HTTP stream
 - 2026.07.16
   - add log panel at bottom
   - add icon
+- 2026.07.22
+  - add plot zoom feature via x/y axis
 
 ## Info
 

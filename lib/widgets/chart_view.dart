@@ -212,12 +212,19 @@ class _ChartViewState extends State<ChartView> {
               ? const EdgeInsets.fromLTRB(12, 10, 16, 8)
               : const EdgeInsets.fromLTRB(16, 24, 24, 16);
 
+          final double leftReservedSize = leftKeys.isNotEmpty ? (isCompact ? 35.0 : 50.0) : 0.0;
+          final double rightReservedSize = rightKeys.isNotEmpty ? (isCompact ? 35.0 : 60.0) : 0.0;
+          final double listenerWidth = constraints.maxWidth - padding.left - padding.right;
+          final double plotAreaLeft = leftReservedSize;
+          final double plotAreaRight = listenerWidth - rightReservedSize;
+          final double plotAreaWidth = max(1.0, plotAreaRight - plotAreaLeft);
+
           return Padding(
             padding: padding,
             child: Column(
               children: [
                 if (!isCompact) ...[
-                  _buildChartHeader(context, leftKeys, rightKeys, provider, isDark),
+                  _buildChartHeader(context, leftKeys, rightKeys, provider, isDark, baseSeqSpan, rawCenter),
                   const SizedBox(height: 16),
                 ],
                 Expanded(
@@ -243,8 +250,8 @@ class _ChartViewState extends State<ChartView> {
 
                         // 1. Horizontal Drag -> Pan X-axis timeline history
                         if (dx.abs() > 0.2) {
-                          final double seqSpanPerPixel = (xMax - xMin) / 400.0;
-                          final double deltaSeq = -dx * seqSpanPerPixel;
+                          final double seqSpanPerPixel = (xMax - xMin) / plotAreaWidth;
+                          final double deltaSeq = dx * seqSpanPerPixel;
                           provider.setXPanOffset(provider.xPanOffset + deltaSeq);
                         }
 
@@ -276,12 +283,20 @@ class _ChartViewState extends State<ChartView> {
                               pressed.contains(LogicalKeyboardKey.controlRight);
 
                           if (isShiftPressed || isCtrlPressed || (dy == 0 && dx != 0)) {
-                            // Shift + Scroll OR Ctrl + Scroll: Zoom X-axis inside plot area (xZoomFactor)
+                            // Shift + Scroll OR Ctrl + Scroll: Zoom X-axis at mouse position inside plot area
                             final double currentZoom = provider.xZoomFactor;
                             double nextZoom = delta < 0 ? (currentZoom * 1.25) : (currentZoom / 1.25);
                             nextZoom = nextZoom.clamp(1.0, 50.0);
                             if ((nextZoom - currentZoom).abs() > 0.001) {
-                              provider.setXZoomFactor(nextZoom);
+                              final double mouseLocalX = pointerSignal.localPosition.dx;
+                              final double focalFraction =
+                                  ((mouseLocalX - plotAreaLeft) / plotAreaWidth).clamp(0.0, 1.0);
+                              provider.zoomXAt(
+                                nextZoom: nextZoom,
+                                focalFraction: focalFraction,
+                                baseSeqSpan: baseSeqSpan,
+                                rawCenter: rawCenter,
+                              );
                             }
                           } else {
                             // Mouse Scroll alone: Zoom Y-axis inside plot area (yZoomFactor)
@@ -588,6 +603,8 @@ class _ChartViewState extends State<ChartView> {
     List<String> rightKeys,
     TelemetryProvider provider,
     bool isDark,
+    double baseSeqSpan,
+    double rawCenter,
   ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -617,8 +634,8 @@ class _ChartViewState extends State<ChartView> {
           spacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            // Reset / Live Button (shown when zoomed in, panned Y, or viewing history)
-            if (provider.xZoomFactor != 1.0 || provider.yZoomFactor != 1.0 || provider.yPanOffset != 0.0 || provider.xPanOffset > 0)
+            // Reset / Live Button (shown when zoomed in, panned Y, or viewing panned X history)
+            if (provider.xZoomFactor != 1.0 || provider.yZoomFactor != 1.0 || provider.yPanOffset != 0.0 || provider.xPanOffset != 0.0)
               InkWell(
                 onTap: () => provider.resetZoomAndPan(),
                 borderRadius: BorderRadius.circular(6),
@@ -633,13 +650,13 @@ class _ChartViewState extends State<ChartView> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        provider.xPanOffset > 0 ? Icons.play_arrow : Icons.restart_alt,
+                        provider.xPanOffset != 0.0 ? Icons.play_arrow : Icons.restart_alt,
                         size: 13,
                         color: Colors.amber,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        provider.xPanOffset > 0 ? 'Jump to Live' : 'Reset View',
+                        provider.xPanOffset != 0.0 ? 'Jump to Live' : 'Reset View',
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -651,8 +668,8 @@ class _ChartViewState extends State<ChartView> {
                 ),
               ),
 
-            // History Offset Badge
-            if (provider.xPanOffset > 0)
+            // History / Pan Offset Badge
+            if (provider.xPanOffset != 0.0)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -666,7 +683,9 @@ class _ChartViewState extends State<ChartView> {
                     const Icon(Icons.history, size: 13, color: Colors.orange),
                     const SizedBox(width: 4),
                     Text(
-                      'History: -${provider.xPanOffset.round()} pts',
+                      provider.xPanOffset > 0
+                          ? 'History: -${provider.xPanOffset.round()} pts'
+                          : 'Offset: +${(-provider.xPanOffset).round()} pts',
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -680,7 +699,7 @@ class _ChartViewState extends State<ChartView> {
 
             // X-Zoom Scale Control Badge
             Tooltip(
-              message: 'X-Axis Zoom | Shift+Wheel or Ctrl+Wheel to zoom X-axis | Click [+] / [-] buttons',
+              message: 'X-Axis Zoom | Shift+Wheel or Ctrl+Wheel to zoom X-axis at cursor | Click [+] / [-] buttons',
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
@@ -703,14 +722,24 @@ class _ChartViewState extends State<ChartView> {
                     ),
                     const SizedBox(width: 4),
                     InkWell(
-                      onTap: () => provider.setXZoomFactor((provider.xZoomFactor * 1.25).clamp(1.0, 50.0)),
+                      onTap: () => provider.zoomXAt(
+                        nextZoom: (provider.xZoomFactor * 1.25).clamp(1.0, 50.0),
+                        focalFraction: 0.5,
+                        baseSeqSpan: baseSeqSpan,
+                        rawCenter: rawCenter,
+                      ),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 2),
                         child: Icon(Icons.add_circle_outline, size: 13, color: Colors.blueAccent),
                       ),
                     ),
                     InkWell(
-                      onTap: () => provider.setXZoomFactor((provider.xZoomFactor / 1.25).clamp(1.0, 50.0)),
+                      onTap: () => provider.zoomXAt(
+                        nextZoom: (provider.xZoomFactor / 1.25).clamp(1.0, 50.0),
+                        focalFraction: 0.5,
+                        baseSeqSpan: baseSeqSpan,
+                        rawCenter: rawCenter,
+                      ),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 2),
                         child: Icon(Icons.remove_circle_outline, size: 13, color: Colors.blueAccent),

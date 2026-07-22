@@ -101,6 +101,9 @@ class TelemetryProvider with ChangeNotifier {
 
   void setXZoomFactor(double zoom) {
     _xZoomFactor = zoom.clamp(1.0, 50.0);
+    if (_xZoomFactor == 1.0) {
+      _xPanOffset = 0.0;
+    }
     notifyListeners();
   }
 
@@ -115,7 +118,37 @@ class TelemetryProvider with ChangeNotifier {
   }
 
   void setXPanOffset(double offset) {
-    _xPanOffset = offset < 0.0 ? 0.0 : offset;
+    _xPanOffset = offset;
+    notifyListeners();
+  }
+
+  void zoomXAt({
+    required double nextZoom,
+    required double focalFraction,
+    required double baseSeqSpan,
+    required double rawCenter,
+  }) {
+    final double clampedZoom = nextZoom.clamp(1.0, 50.0);
+    if (clampedZoom == 1.0) {
+      _xZoomFactor = 1.0;
+      _xPanOffset = 0.0;
+      notifyListeners();
+      return;
+    }
+
+    final double currentZoomedSpan = baseSeqSpan / _xZoomFactor;
+    final double currentSeqCenter = rawCenter - _xPanOffset;
+    final double currentXMin = currentSeqCenter - currentZoomedSpan / 2;
+    final double currentXMax = currentSeqCenter + currentZoomedSpan / 2;
+
+    final double r = focalFraction.clamp(0.0, 1.0);
+    final double seqFocus = currentXMin + r * (currentXMax - currentXMin);
+
+    final double newZoomedSpan = baseSeqSpan / clampedZoom;
+    final double nextSeqCenter = seqFocus + (0.5 - r) * newZoomedSpan;
+
+    _xZoomFactor = clampedZoom;
+    _xPanOffset = rawCenter - nextSeqCenter;
     notifyListeners();
   }
 
